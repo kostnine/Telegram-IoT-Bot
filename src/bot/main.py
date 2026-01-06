@@ -48,8 +48,16 @@ class TelegramIoTBot:
         self.application = None
         self.automation_task = None
         
+        # Track users who started the bot (for push notifications)
+        self.registered_users = set()
+        
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /start command"""
+        # Register user for push notifications
+        chat_id = update.effective_chat.id
+        self.registered_users.add(chat_id)
+        logger.info(f"User {chat_id} registered for push notifications")
+        
         # Get device count for display
         devices = self.mqtt_client.get_all_devices()
         online = len(self.mqtt_client.get_online_devices())
@@ -209,6 +217,61 @@ class TelegramIoTBot:
         """Handle /alerts command"""
         await self.iot_commands.get_alerts(update)
     
+    async def send_alert_notification(self, alert: dict):
+        """Send push notification to all registered users"""
+        if not self.application or not self.registered_users:
+            return
+        
+        # Format alert message
+        level = alert.get('level', 'INFO')
+        message = alert.get('message', 'Unknown alert')
+        device_id = alert.get('device_id', 'system')
+        timestamp = alert.get('timestamp', '')
+        
+        # Emoji based on level
+        emoji = {
+            'INFO': 'ℹ️',
+            'WARNING': '⚠️',
+            'ERROR': '❌',
+            'CRITICAL': '🚨'
+        }.get(level, '📢')
+        
+        notification_text = (
+            f"{emoji} *{level} ALERT*\n\n"
+            f"📱 Įrenginys: `{device_id}`\n"
+            f"💬 {message}\n"
+            f"🕐 {timestamp[:19] if timestamp else 'now'}"
+        )
+        
+        # Get device counts for main menu
+        devices = self.mqtt_client.get_all_devices()
+        online = len(self.mqtt_client.get_online_devices())
+        total = len(devices)
+        
+        # Main menu keyboard
+        keyboard = [
+            [InlineKeyboardButton(f"📱 Įrenginiai ({online}/{total} online)", callback_data='devices_list')],
+            [
+                InlineKeyboardButton("📈 Grafikai", callback_data='analytics_menu'),
+                InlineKeyboardButton("🚨 Alertai", callback_data='all_alerts')
+            ],
+            [InlineKeyboardButton("🔄 Atnaujinti", callback_data='refresh_main')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # Send to all registered users
+        for chat_id in self.registered_users:
+            try:
+                await self.application.bot.send_message(
+                    chat_id=chat_id,
+                    text=notification_text,
+                    parse_mode='Markdown',
+                    reply_markup=reply_markup
+                )
+                logger.info(f"Alert notification sent to {chat_id}")
+            except Exception as e:
+                logger.error(f"Failed to send notification to {chat_id}: {e}")
+    
     def setup_handlers(self):
         """Setup command and message handlers"""
         self.application.add_handler(CommandHandler("start", self.start_command))
@@ -238,6 +301,11 @@ class TelegramIoTBot:
             # Start the automation engine
             self.automation_task = asyncio.create_task(self.automation_engine.start_engine())
             logger.info("Automation engine started")
+            
+            # Register alert callback for push notifications
+            loop = asyncio.get_running_loop()
+            self.mqtt_client.set_alert_callback(self.send_alert_notification, loop=loop)
+            logger.info("Alert push notifications enabled")
             
             # Start the bot
             await self.application.initialize()

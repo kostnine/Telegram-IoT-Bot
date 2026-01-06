@@ -89,7 +89,6 @@ python https_server.py
 
 ### Telefono sensorių App (iOS/Android per HTTPS)
 - **Sensoriai**: GPS, akselerometras, giroskopas, kompasas, garso lygis, baterija
-- **Komandos**: Beep, Vibrate, Lock screen, Location request
 
 ## Architektūra
 

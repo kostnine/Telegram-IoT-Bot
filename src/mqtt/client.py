@@ -29,6 +29,11 @@ class SimpleMQTTClient:
         self.data_storage = None
         self.automation_engine = None
         
+        # Alert notification callback
+        self.alert_callback = None
+        self.admin_chat_ids = []
+        self._main_loop = None
+        
     def connect(self):
         """Connect to MQTT broker"""
         try:
@@ -222,6 +227,33 @@ class SimpleMQTTClient:
             self.alerts = self.alerts[-50:]
         
         logger.info(f"New alert: {alert}")
+        
+        # Send push notification for WARNING and CRITICAL alerts
+        if alert['level'] in ['WARNING', 'CRITICAL', 'ERROR']:
+            self._send_alert_notification(alert)
+    
+    def _send_alert_notification(self, alert: Dict[str, Any]):
+        """Send push notification to registered users"""
+        if self.alert_callback and self._main_loop:
+            try:
+                logger.info(f"🔔 Sending push notification for alert: {alert['level']}")
+                # Schedule coroutine in the main event loop
+                future = asyncio.run_coroutine_threadsafe(
+                    self.alert_callback(alert),
+                    self._main_loop
+                )
+                # Don't wait for result to avoid blocking
+                logger.info("🔔 Push notification scheduled")
+            except Exception as e:
+                logger.error(f"Failed to send alert notification: {e}")
+    
+    def set_alert_callback(self, callback: Callable, loop=None, chat_ids: list = None):
+        """Set callback for alert notifications"""
+        self.alert_callback = callback
+        self._main_loop = loop
+        if chat_ids:
+            self.admin_chat_ids = chat_ids
+        logger.info(f"Alert callback registered, loop: {loop is not None}")
     
     def _handle_system_status(self, data: Dict[str, Any]):
         """Handle system status updates"""
@@ -308,6 +340,10 @@ class SimpleMQTTClient:
                 self.data_storage.store_device_status(device_id, timestamp, status_data)
             except Exception as e:
                 logger.error(f"Failed to store device status: {e}")
+    
+    def get_admin_chat_ids(self) -> list:
+        """Get registered admin chat IDs"""
+        return self.admin_chat_ids
     
     def _evaluate_automation_rules_async(self, device_id: str, sensor_data: Dict[str, Any]):
         """Evaluate automation rules asynchronously"""
