@@ -9,7 +9,7 @@ import threading
 import time
 import asyncio
 import ssl
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Any, Callable, Optional
 import paho.mqtt.client as mqtt
 from config.settings import Config
@@ -156,11 +156,12 @@ class SimpleMQTTClient:
                 self.device_data[device_id] = {}
             
             timestamp = data.get('timestamp', datetime.now().isoformat())
+            server_time = datetime.now().isoformat()  # Use SERVER time for last_seen
             
             self.device_data[device_id].update({
                 'status': data,
-                'last_seen': timestamp,
-                'online': data.get('online', False)
+                'last_seen': server_time,
+                'online': True  # Device is online if sending status
             })
             
             # Store device status for analytics
@@ -191,9 +192,10 @@ class SimpleMQTTClient:
             if 'timestamp' not in data:
                 data['timestamp'] = timestamp
             
-            # Mark device as online when receiving data
+            # Mark device as online when receiving data - use SERVER time for last_seen
+            server_time = datetime.now().isoformat()
             self.device_data[device_id]['online'] = True
-            self.device_data[device_id]['last_seen'] = timestamp
+            self.device_data[device_id]['last_seen'] = server_time
             
             self.device_data[device_id]['sensor_data'].append(data)
             
@@ -308,12 +310,42 @@ class SimpleMQTTClient:
         """Get recent alerts"""
         return self.alerts[-limit:] if self.alerts else []
     
+    def is_device_online(self, device_id: str, timeout_seconds: int = 30) -> bool:
+        """Check if device is online based on last_seen timestamp"""
+        data = self.device_data.get(device_id, {})
+        last_seen = data.get('last_seen')
+        
+        if not last_seen:
+            return False
+        
+        try:
+            now = datetime.now()
+            if isinstance(last_seen, str):
+                last_seen_dt = datetime.fromisoformat(last_seen.replace('Z', '+00:00'))
+                if last_seen_dt.tzinfo:
+                    last_seen_dt = last_seen_dt.replace(tzinfo=None)
+            else:
+                last_seen_dt = last_seen
+            
+            time_diff = (now - last_seen_dt).total_seconds()
+            is_online = time_diff <= timeout_seconds
+            
+            # Update the online status in device_data
+            data['online'] = is_online
+            return is_online
+        except Exception as e:
+            logger.warning(f"Error checking online status for {device_id}: {e}")
+            return False
+    
     def get_online_devices(self) -> Dict[str, Dict[str, Any]]:
-        """Get only online devices"""
-        return {
-            device_id: data for device_id, data in self.device_data.items()
-            if data.get('online', False)
-        }
+        """Get only online devices (with timeout check)"""
+        online_devices = {}
+        
+        for device_id, data in self.device_data.items():
+            if self.is_device_online(device_id):
+                online_devices[device_id] = data
+        
+        return online_devices
     
     def set_data_storage(self, data_storage):
         """Set the data storage component"""

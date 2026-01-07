@@ -45,7 +45,7 @@ class IoTCommands:
         keyboard = []
         
         for device_id, data in devices.items():
-            online = data.get('online', False)
+            online = self.mqtt_client.is_device_online(device_id)
             status_icon = "🟢" if online else "🔴"
             device_type = data.get('status', {}).get('type', 'Unknown')
             
@@ -78,7 +78,7 @@ class IoTCommands:
             await query.edit_message_text(f"❌ Įrenginys '{device_id}' nerastas")
             return
         
-        online = device_data.get('online', False)
+        online = self.mqtt_client.is_device_online(device_id)
         status_icon = "🟢 Online" if online else "🔴 Offline"
         device_status = device_data.get('status', {})
         device_type = device_status.get('type', 'Unknown')
@@ -225,7 +225,7 @@ class IoTCommands:
         offline_count = 0
         
         for device_id, data in devices.items():
-            online = data.get('online', False)
+            online = self.mqtt_client.is_device_online(device_id)
             last_seen = data.get('last_seen', 'Never')
             
             if online:
@@ -366,11 +366,11 @@ class IoTCommands:
         # Real-time device status
         settings_text += "📊 Live Device Status:\n"
         if devices:
-            online_count = sum(1 for d in devices.values() if d.get('online', False))
+            online_count = len(self.mqtt_client.get_online_devices())
             settings_text += f"   📈 Total: {len(devices)} | Online: {online_count} | Offline: {len(devices) - online_count}\n\n"
             
             for device_id, data in devices.items():
-                online = data.get('online', False)
+                online = self.mqtt_client.is_device_online(device_id)
                 status_icon = "🟢" if online else "🔴"
                 last_seen = data.get('last_seen', 'Never')
                 if last_seen != 'Never':
@@ -478,7 +478,7 @@ class IoTCommands:
         status_text = "📊 *All Devices Status:*\n\n"
         
         for device_id, data in devices.items():
-            online = data.get('online', False)
+            online = self.mqtt_client.is_device_online(device_id)
             status_icon = "🟢" if online else "🔴"
             
             status_text += f"{status_icon} *{device_id}*\n"
@@ -506,7 +506,7 @@ class IoTCommands:
         device_list = "📱 *Connected Devices:*\n\n"
         
         for device_id, data in devices.items():
-            online = data.get('online', False)
+            online = self.mqtt_client.is_device_online(device_id)
             status_icon = "🟢" if online else "🔴"
             device_type = data.get('status', {}).get('type', 'Unknown')
             last_seen = data.get('last_seen', 'Never')
@@ -526,7 +526,7 @@ class IoTCommands:
                 await update.message.reply_text(f"❌ Device '{device_id}' not found.")
                 return
             
-            if not device_data.get('online', False):
+            if not self.mqtt_client.is_device_online(device_id):
                 await update.message.reply_text(f"🔴 Device '{device_id}' is offline.")
                 return
             
@@ -571,7 +571,7 @@ class IoTCommands:
         monitoring_text = f"📊 *Monitoring: {device_id}*\n\n"
         
         # Device status
-        online = device_data.get('online', False)
+        online = self.mqtt_client.is_device_online(device_id)
         status_icon = "🟢" if online else "🔴"
         monitoring_text += f"Status: {status_icon} {'Online' if online else 'Offline'}\n"
         
@@ -648,7 +648,7 @@ class IoTCommands:
         
         device_status = device_data.get('status', {})
         device_type = device_status.get('type', 'Unknown')
-        online = device_data.get('online', False)
+        online = self.mqtt_client.is_device_online(device_id)
         status_icon = "🟢" if online else "🔴"
         
         text = f"🎛️ Device Control: {device_id}\n\n"
@@ -716,7 +716,7 @@ class IoTCommands:
                 await query.edit_message_text(f"❌ Device '{device_id}' not found.")
                 return
             
-            if not device_data.get('online', False):
+            if not self.mqtt_client.is_device_online(device_id):
                 await query.edit_message_text(f"🔴 Device '{device_id}' is offline.")
                 return
             
