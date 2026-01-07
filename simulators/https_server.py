@@ -50,7 +50,7 @@ def generate_self_signed_cert():
     ).add_extension(
         x509.SubjectAlternativeName([
             x509.DNSName(u"localhost"),
-            x509.IPAddress(ipaddress.IPv4Address("192.168.1.219")),
+            x509.IPAddress(ipaddress.IPv4Address("172.20.10.2")),
         ]),
         critical=False,
     ).sign(key, hashes.SHA256(), default_backend())
@@ -81,7 +81,7 @@ Handler = http.server.SimpleHTTPRequestHandler
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 print(f"🔒 Starting HTTPS server on port {PORT}")
-print(f"📱 Open on phone: https://192.168.1.219:{PORT}/phone_sensor_app.html")
+print(f"📱 Open on phone: https://172.20.10.2:{PORT}/phone_sensor_app.html")
 print("⚠️  Accept the security warning (self-signed certificate)")
 print(f"📂 Serving from: {os.getcwd()}")
 
