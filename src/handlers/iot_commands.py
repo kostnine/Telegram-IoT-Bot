@@ -10,6 +10,7 @@ from typing import Dict, Any, List
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from src.mqtt.client import SimpleMQTTClient as MQTTClient
+from src.handlers.smart_bulb_commands import SmartBulbCommands
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +83,12 @@ class IoTCommands:
         status_icon = "🟢 Online" if online else "🔴 Offline"
         device_status = device_data.get('status', {})
         device_type = device_status.get('type', 'Unknown')
+        
+        # Handle smart bulb with specialized interface
+        if device_type == 'smart_bulb':
+            smart_bulb_commands = SmartBulbCommands(self.mqtt_client)
+            await smart_bulb_commands.show_bulb_control(query, device_id)
+            return
         last_seen = device_data.get('last_seen', 'Niekada')
         if last_seen != 'Niekada':
             last_seen = last_seen[:19].replace('T', ' ')
@@ -659,7 +666,12 @@ class IoTCommands:
         keyboard = []
         
         # Add device-specific controls based on type
-        if device_type == 'pump':
+        if device_type == 'smart_bulb':
+            # Use smart bulb specific controls
+            keyboard.append([
+                InlineKeyboardButton("💡 Valdyti lemputę", callback_data=f'bulb_control_{device_id}')
+            ])
+        elif device_type == 'pump':
             keyboard.append([
                 InlineKeyboardButton("▶️ Start", callback_data=f'cmd_{device_id}_start'),
                 InlineKeyboardButton("⏹️ Stop", callback_data=f'cmd_{device_id}_stop')

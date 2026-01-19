@@ -5,7 +5,7 @@ Extends the basic IoT commands with data visualization and automation management
 
 import io
 import logging
-import pandas as pd
+# import pandas as pd  # Temporarily disabled
 from datetime import datetime, timedelta
 from typing import Dict, Any, List
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile

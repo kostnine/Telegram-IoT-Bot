@@ -16,6 +16,7 @@ from src.services.data_storage import DataStorage
 from src.services.analytics import IoTAnalytics
 from src.services.automation_engine import AutomationEngine
 from src.handlers.advanced_commands import AdvancedIoTCommands
+from src.handlers.smart_bulb_commands import SmartBulbCommands
 
 # Configure logging
 logging.basicConfig(
@@ -44,6 +45,7 @@ class TelegramIoTBot:
             self.mqtt_client, self.data_storage, 
             self.analytics, self.automation_engine
         )
+        self.smart_bulb_commands = SmartBulbCommands(self.mqtt_client)
         
         self.application = None
         self.automation_task = None
@@ -152,12 +154,110 @@ class TelegramIoTBot:
                 device_id = parts[1]
                 command = parts[2]
                 await self.iot_commands.execute_device_command(query, device_id, command)
+        elif query.data.startswith('bulb_') or query.data.startswith('bulb|'):
+            # Handle smart bulb commands
+            await self.handle_bulb_callback(query, query.data)
         elif query.data.startswith('cmd_'):
             # Legacy format
             parts = query.data.replace('cmd_', '').rsplit('_', 1)
             if len(parts) == 2:
                 device_id, command = parts
                 await self.iot_commands.execute_device_command(query, device_id, command)
+    
+    async def handle_bulb_callback(self, query, data: str):
+        """Handle smart bulb callback commands"""
+        try:
+            # New safe format: bulb|action|device_id|...
+            if data.startswith('bulb|'):
+                parts = data.split('|')
+                if len(parts) < 3:
+                    return
+                action = parts[1]
+                bulb_id = parts[2]
+                extra = parts[3:]
+            else:
+                # Backward-compatible old format: bulb_action_<device_id>_...
+                # NOTE: device_id may contain underscores, so we parse from the end for known patterns.
+                parts = data.split('_')
+                if len(parts) < 3:
+                    return
+                action = parts[1]
+                extra = parts[3:]
+                # For old format we can only reliably extract device_id for some actions
+                # but keep best-effort behavior.
+                bulb_id = parts[2]
+            
+            if action == 'control':
+                await self.smart_bulb_commands.show_bulb_control(query, bulb_id)
+            elif action == 'power':
+                if (data.startswith('bulb|') and len(extra) >= 1) or (not data.startswith('bulb|') and len(parts) >= 4):
+                    state_str = extra[0] if data.startswith('bulb|') else parts[3]
+                    state = state_str == 'True'
+                    await self.smart_bulb_commands.toggle_power(query, bulb_id, state)
+            elif action == 'color':
+                await self.smart_bulb_commands.show_color_picker(query, bulb_id)
+            elif action == 'setcolor':
+                if data.startswith('bulb|'):
+                    if len(extra) >= 3:
+                        r = int(extra[0])
+                        g = int(extra[1])
+                        b = int(extra[2])
+                    else:
+                        return
+                else:
+                    if len(parts) >= 6:
+                        r = int(parts[3])
+                        g = int(parts[4])
+                        b = int(parts[5])
+                    else:
+                        return
+                await self.smart_bulb_commands.set_color(query, bulb_id, r, g, b)
+            elif action == 'brightness':
+                if data.startswith('bulb|'):
+                    if len(extra) >= 1:
+                        if extra[0] == 'control':
+                            await self.smart_bulb_commands.show_brightness_control(query, bulb_id)
+                        else:
+                            brightness = int(extra[0])
+                            await self.smart_bulb_commands.set_brightness(query, bulb_id, brightness)
+                else:
+                    if len(parts) >= 4:
+                        if parts[3] == 'control':
+                            await self.smart_bulb_commands.show_brightness_control(query, bulb_id)
+                        else:
+                            brightness = int(parts[3])
+                            await self.smart_bulb_commands.set_brightness(query, bulb_id, brightness)
+            elif action == 'presets':
+                await self.smart_bulb_commands.show_presets(query, bulb_id)
+            elif action == 'preset':
+                if data.startswith('bulb|'):
+                    if len(extra) >= 1:
+                        preset_name = extra[0]
+                        await self.smart_bulb_commands.apply_preset(query, bulb_id, preset_name)
+                else:
+                    if len(parts) >= 4:
+                        preset_name = parts[3]
+                        await self.smart_bulb_commands.apply_preset(query, bulb_id, preset_name)
+            elif action == 'night':
+                await self.smart_bulb_commands.set_night_mode(query, bulb_id)
+            elif action == 'day':
+                await self.smart_bulb_commands.set_day_mode(query, bulb_id)
+            elif action == 'refresh':
+                await self.smart_bulb_commands.show_bulb_control(query, bulb_id)
+                
+        except Exception as e:
+            logger.error(f"Error handling bulb callback: {e}")
+            query.edit_message_text(f"❌ Error: {str(e)}")
+    
+    async def bulb_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /bulb command - direct smart bulb control"""
+        try:
+            # Show smart bulb control directly
+            bulb_id = "smart_bulb_01"
+            await self.smart_bulb_commands.show_bulb_control(update.message, bulb_id)
+        except Exception as e:
+            logger.error(f"Error in bulb command: {e}")
+            await update.message.reply_text(f"❌ Error: {str(e)}")
     
     async def show_main_menu(self, query):
         """Show main menu"""
@@ -281,6 +381,7 @@ class TelegramIoTBot:
         self.application.add_handler(CommandHandler("control", self.control_command))
         self.application.add_handler(CommandHandler("monitor", self.monitor_command))
         self.application.add_handler(CommandHandler("alerts", self.alerts_command))
+        self.application.add_handler(CommandHandler("bulb", self.bulb_command))
         self.application.add_handler(CallbackQueryHandler(self.button_callback))
     
     async def run(self):
